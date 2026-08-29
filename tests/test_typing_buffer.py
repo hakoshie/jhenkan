@@ -36,3 +36,15 @@ def test_navigation_and_window_change_clear_buffer(monkeypatch):
     current_window[0] = 20
     press(buffer, "c")
     assert buffer.length() == 1
+
+
+def test_enter_is_ignored_without_clearing_buffer(monkeypatch):
+    monkeypatch.setattr("jhenkan_app.typing_buffer.foreground_window", lambda: 10)
+    monkeypatch.setattr("jhenkan_app.typing_buffer.keyboard.is_pressed", lambda _key: False)
+    buffer = TypingBuffer()
+
+    press(buffer, "a")
+    press(buffer, "b")
+    press(buffer, "enter")
+
+    assert buffer.text() == "ab"

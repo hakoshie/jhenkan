@@ -64,11 +64,15 @@ class TypingBuffer:
                 if self._items:
                     self._items.pop()
                 return
+            if name == "enter":
+                # IME uses Enter to commit composition. Keep the pending keys,
+                # but do not count the Enter itself as a character.
+                return
             if len(name) == 1:
                 self._items.append(name)
                 return
-            if name in {"space", "tab", "enter", "decimal"}:
-                self._items.append({"space": " ", "tab": "\t", "enter": "\n", "decimal": "."}[name])
+            if name in {"space", "tab", "decimal"}:
+                self._items.append({"space": " ", "tab": "\t", "decimal": "."}[name])
                 return
             if name in {
                 "left", "right", "up", "down", "home", "end", "delete",
