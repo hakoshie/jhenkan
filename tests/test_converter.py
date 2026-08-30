@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 from jhenkan_app.converter import preserve_outer_whitespace
 from jhenkan_app.converter import JapaneseConverter
+from jhenkan_app.converter import INSTRUCTIONS
 
 
 def test_preserves_outer_whitespace():
@@ -11,6 +12,13 @@ def test_preserves_outer_whitespace():
 
 def test_does_not_duplicate_whitespace_from_result():
     assert preserve_outer_whitespace("hello", "  こんにちは  ") == "こんにちは"
+
+
+def test_instructions_use_context_only_for_conversion_and_forbid_rewriting():
+    assert "同音異義語" in INSTRUCTIONS
+    assert "語彙、語順、助詞、語尾、文体、意味を変更しない" in INSTRUCTIONS
+    assert "自然な表現への言い換え" in INSTRUCTIONS
+    assert "タイプミスか確信できない場合は入力どおり" in INSTRUCTIONS
 
 
 def test_openai_uses_responses_api():
