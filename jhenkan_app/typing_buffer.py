@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 
 import keyboard
+import pyperclip
 
 from .selection import foreground_window
 
@@ -58,7 +59,20 @@ class TypingBuffer:
                 self._window = window
 
             name = event.name or ""
-            if keyboard.is_pressed("ctrl") or keyboard.is_pressed("alt") or keyboard.is_pressed("windows"):
+            if keyboard.is_pressed("ctrl"):
+                if name == "v":
+                    try:
+                        self._items.extend(pyperclip.paste())
+                    except pyperclip.PyperclipException:
+                        # If the clipboard cannot be read, the editor still
+                        # changed underneath us, so the old buffer is unsafe.
+                        self._items.clear()
+                elif name in {"x", "z", "y", "a"}:
+                    # These shortcuts can replace the selection, move the
+                    # caret, or rewrite text in ways the hook cannot observe.
+                    self._items.clear()
+                return
+            if keyboard.is_pressed("alt") or keyboard.is_pressed("windows"):
                 return
             if name == "backspace":
                 if self._items:
