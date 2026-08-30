@@ -13,7 +13,11 @@ from pystray import MenuItem as Item
 
 from jhenkan_app.config import Settings, get_api_key
 from jhenkan_app.hotkey import GlobalHotkey
-from jhenkan_app.selection import capture_buffered_text, capture_selection_only
+from jhenkan_app.selection import (
+    capture_buffered_text,
+    capture_selection_only,
+    capture_selection_or_line,
+)
 from jhenkan_app.typing_buffer import TypingBuffer
 from jhenkan_app.ui import convert_selected, edit_settings
 
@@ -91,6 +95,13 @@ class App:
                 buffered_text = self.typing_buffer.text()
                 logger.info("Typing buffer contains %d characters", len(buffered_text))
                 captured = capture_buffered_text(buffered_text)
+            if not captured:
+                # A long-running Windows keyboard hook can occasionally miss
+                # keystrokes (notably in browser text fields). Read the text
+                # before the caret directly instead of reporting a false
+                # "no conversion target" error.
+                logger.info("Typing buffer empty; falling back to caret line capture")
+                captured = capture_selection_or_line()
             if not captured:
                 logger.info("No text captured")
                 self.notify("変換対象がありません。文字を入力してからCtrl+Jを押してください。")
