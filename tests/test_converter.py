@@ -21,6 +21,13 @@ def test_instructions_use_context_only_for_conversion_and_forbid_rewriting():
     assert "タイプミスか確信できない場合は入力どおり" in INSTRUCTIONS
 
 
+def test_instructions_guard_against_dropping_romanized_segments():
+    assert "自然さより入力の保存を優先" in INSTRUCTIONS
+    assert "助詞、反復、口語表現、連続する n を省略しない" in INSTRUCTIONS
+    assert "omonnnainajinsei → おもんないな人生" in INSTRUCTIONS
+    assert "入力の各区間に対応する読み" in INSTRUCTIONS
+
+
 def test_openai_uses_responses_api():
     with patch("jhenkan_app.converter.OpenAI") as openai:
         client = openai.return_value

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ctypes
 import threading
 
 import keyboard
@@ -16,16 +17,30 @@ class TypingBuffer:
         self._window = 0
         self._paused = False
         self._hook = None
+        self._mouse_thread: threading.Thread | None = None
+        self._mouse_stop = threading.Event()
         self._lock = threading.Lock()
 
     def start(self) -> None:
         if self._hook is None:
             self._hook = keyboard.on_press(self._on_press)
+        if self._mouse_thread is None or not self._mouse_thread.is_alive():
+            self._mouse_stop.clear()
+            self._mouse_thread = threading.Thread(
+                target=self._watch_mouse_buttons,
+                name="JHenkanMouseWatcher",
+                daemon=True,
+            )
+            self._mouse_thread.start()
 
     def stop(self) -> None:
         if self._hook is not None:
             keyboard.unhook(self._hook)
             self._hook = None
+        self._mouse_stop.set()
+        if self._mouse_thread is not None:
+            self._mouse_thread.join(timeout=0.2)
+            self._mouse_thread = None
 
     def pause(self) -> None:
         with self._lock:
@@ -48,6 +63,25 @@ class TypingBuffer:
     def text(self) -> str:
         with self._lock:
             return "".join(self._items)
+
+    def _on_mouse_click(self) -> None:
+        with self._lock:
+            if self._paused:
+                return
+            self._items.clear()
+            self._window = foreground_window()
+
+    def _watch_mouse_buttons(self) -> None:
+        """Notice clicks without installing a hook that can disrupt dragging."""
+        user32 = ctypes.windll.user32
+        buttons = (0x01, 0x02, 0x04, 0x05, 0x06)
+        was_down = {button: bool(user32.GetAsyncKeyState(button) & 0x8000) for button in buttons}
+        while not self._mouse_stop.wait(0.02):
+            for button in buttons:
+                is_down = bool(user32.GetAsyncKeyState(button) & 0x8000)
+                if is_down and not was_down[button]:
+                    self._on_mouse_click()
+                was_down[button] = is_down
 
     def _on_press(self, event: keyboard.KeyboardEvent) -> None:
         with self._lock:

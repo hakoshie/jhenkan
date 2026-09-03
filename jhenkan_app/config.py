@@ -40,6 +40,7 @@ class Settings:
     gemini_model: str = "gemini-3.6-flash"
     hotkey: str = "ctrl+j"
     start_with_windows: bool = True
+    diagnostic_text_logging: bool = False
     api_timeout_seconds: float = 30.0
 
     @classmethod

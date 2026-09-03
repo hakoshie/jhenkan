@@ -90,11 +90,18 @@ def edit_settings(settings: Settings, first_run: bool = False) -> bool:
     ttk.Checkbutton(
         frame, text="Windowsへのサインイン時に起動", variable=startup_var
     ).grid(row=7, column=0, columnspan=2, sticky="w")
+    diagnostic_var = tk.BooleanVar(value=settings.diagnostic_text_logging)
+    ttk.Checkbutton(
+        frame,
+        text="診断ログに変換前・変換後の本文を記録する",
+        variable=diagnostic_var,
+    ).grid(row=8, column=0, columnspan=2, sticky="w", pady=(4, 0))
     ttk.Label(
         frame,
-        text="使い方: 未選択でCtrl+Jなら未確定入力。選択中なら直接再変換。",
+        text="注意: 診断ログを有効にすると入力内容が jhenkan.log に残ります。\n"
+        "使い方: 未選択でCtrl+Jなら未確定入力。選択中なら直接再変換。",
         wraplength=390,
-    ).grid(row=8, column=0, columnspan=2, pady=(12, 14), sticky="w")
+    ).grid(row=9, column=0, columnspan=2, pady=(12, 14), sticky="w")
 
     saved = False
 
@@ -115,15 +122,16 @@ def edit_settings(settings: Settings, first_run: bool = False) -> bool:
         settings.gemini_model = models["gemini"] or "gemini-3.6-flash"
         settings.openai_model = models["openai"] or "gpt-5.6-luna"
         settings.start_with_windows = startup_var.get()
+        settings.diagnostic_text_logging = diagnostic_var.get()
         settings.save()
         set_startup(settings.start_with_windows)
         saved = True
         root.destroy()
 
-    ttk.Button(frame, text="保存", command=save).grid(row=9, column=1, sticky="e")
+    ttk.Button(frame, text="保存", command=save).grid(row=10, column=1, sticky="e")
     if not first_run:
         ttk.Button(frame, text="キャンセル", command=root.destroy).grid(
-            row=9, column=0, sticky="e", padx=(0, 8)
+            row=10, column=0, sticky="e", padx=(0, 8)
         )
     root.protocol("WM_DELETE_WINDOW", root.destroy)
     key_entry.focus_set()
@@ -234,6 +242,7 @@ def compose_text(
                     settings.model,
                     settings.api_timeout_seconds,
                     settings.provider,
+                    settings.diagnostic_text_logging,
                 )
                 result = converter.convert(source)
                 root.after(0, finish, result)
@@ -340,6 +349,7 @@ def convert_selected(settings: Settings, captured: CapturedText, notify) -> bool
                 settings.model,
                 settings.api_timeout_seconds,
                 settings.provider,
+                settings.diagnostic_text_logging,
             )
             root.after(0, success, converter.convert(captured.text))
         except Exception as exc:
