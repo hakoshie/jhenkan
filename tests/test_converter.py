@@ -28,6 +28,19 @@ def test_instructions_guard_against_dropping_romanized_segments():
     assert "入力の各区間に対応する読み" in INSTRUCTIONS
 
 
+def test_instructions_preserve_iidurai_as_iizurai():
+    assert 'du は「づ」' in INSTRUCTIONS
+    assert 'iidurai は「言いづらい」' in INSTRUCTIONS
+    assert "kirakuniiidurainomoatte → 気楽に言いづらいのもあって" in INSTRUCTIONS
+    assert "言うくらい" in INSTRUCTIONS
+
+
+def test_instructions_correct_obvious_english_typos_without_translating_them():
+    assert "正しく綴られた英単語は保持" in INSTRUCTIONS
+    assert "明白な入れ替わり" in INSTRUCTIONS
+    assert "exploerer wo hiraku → explorerを開く" in INSTRUCTIONS
+
+
 def test_openai_uses_responses_api():
     with patch("jhenkan_app.converter.OpenAI") as openai:
         client = openai.return_value
