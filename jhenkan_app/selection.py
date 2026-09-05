@@ -51,7 +51,7 @@ def activate_window(window: int, wait_seconds: float = 0.15) -> bool:
 def _wait_for_hotkey_release(timeout: float = 2.0) -> None:
     """Avoid Ctrl+Shift+Home when Ctrl is still held after Ctrl+J."""
     deadline = time.monotonic() + timeout
-    while keyboard.is_pressed("ctrl") and time.monotonic() < deadline:
+    while ctypes.windll.user32.GetAsyncKeyState(0x11) & 0x8000 and time.monotonic() < deadline:
         time.sleep(0.01)
 
 

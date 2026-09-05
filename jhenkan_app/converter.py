@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 
 from openai import OpenAI
@@ -56,17 +57,28 @@ class JapaneseConverter:
         self.provider = provider
         self.diagnostic_text_logging = diagnostic_text_logging
 
-    def convert(self, source: str) -> str:
+    def convert(self, source: str, previous: str | None = None) -> str:
         if not source.strip():
             return source
+        instructions = INSTRUCTIONS
+        request_input = source
+        if previous is not None:
+            instructions = (
+                "日本語IMEの次候補を出してください。入力はJSONで、sourceがローマ字原文、"
+                "previousがユーザーが却下した変換結果です。previousの誤った同音異義語や"
+                "区切りを変更し、原文の読みと文脈に合う別候補を1つ出してください。"
+                "previousと同じ結果は不可。原文の語順、助詞、語尾を保持し、説明せず"
+                "候補本文だけを出力してください。JSON形式、引用符、キー名を出力してはいけません。"
+            )
+            request_input = json.dumps(dict(source=source, previous=previous), ensure_ascii=False)
         if self.diagnostic_text_logging:
             logger.info("Diagnostic conversion input: %r", source)
         if self.provider == "gemini":
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": INSTRUCTIONS},
-                    {"role": "user", "content": source},
+                    {"role": "system", "content": instructions},
+                    {"role": "user", "content": request_input},
                 ],
                 reasoning_effort="low",
                 max_tokens=1024,
@@ -75,8 +87,8 @@ class JapaneseConverter:
         else:
             response = self.client.responses.create(
                 model=self.model,
-                instructions=INSTRUCTIONS,
-                input=source,
+                instructions=instructions,
+                input=request_input,
                 reasoning={"effort": "none"},
                 max_output_tokens=1024,
                 store=False,
@@ -85,6 +97,8 @@ class JapaneseConverter:
         if not result:
             raise RuntimeError("APIから変換結果が返りませんでした")
         converted = preserve_outer_whitespace(source, result)
+        if previous is not None and converted == previous:
+            raise RuntimeError("別候補が見つかりませんでした。元の結果を保持します。")
         if self.diagnostic_text_logging:
             logger.info("Diagnostic conversion output: %r", converted)
         return converted

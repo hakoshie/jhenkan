@@ -55,6 +55,7 @@ class App:
         self.paused = False
         self.busy = threading.Lock()
         self.global_hotkey: GlobalHotkey | None = None
+        self.last_conversion: tuple[str, str, int] | None = None
         self.typing_buffer = TypingBuffer()
         self.actions: queue.Queue[str] = queue.Queue()
         self.icon = pystray.Icon(
@@ -79,18 +80,26 @@ class App:
         self.icon.title = "JHenkan — 一時停止中" if self.paused else "JHenkan — Ctrl+Jで変換"
         self.icon.update_menu()
 
-    def hotkey(self) -> None:
-        logger.info("Ctrl+J received")
+    def hotkey(self, alternate: bool = False) -> None:
+        logger.info("%s received", "Ctrl+Shift+J" if alternate else "Ctrl+J")
         if self.paused or not self.busy.acquire(blocking=False):
             logger.info("Ctrl+J ignored: paused=%s busy=%s", self.paused, self.busy.locked())
             return
-        threading.Thread(target=self.convert_current, daemon=True).start()
+        threading.Thread(target=self.convert_current, args=(alternate,), daemon=True).start()
 
-    def convert_current(self) -> None:
+    def convert_current(self, alternate: bool = False) -> None:
         queued = False
         self.typing_buffer.pause()
         try:
             captured = capture_selection_only()
+            if alternate:
+                last = self.last_conversion
+                if not captured or not last or captured.text != last[1] or captured.window != last[2]:
+                    self.notify("直前の変換結果を選択してCtrl+Shift+Jを押してください。")
+                    return
+                self.actions.put(("convert", captured, last[0], last[1]))
+                queued = True
+                return
             if not captured:
                 buffered_text = self.typing_buffer.text()
                 logger.info("Typing buffer contains %d characters", len(buffered_text))
@@ -143,7 +152,12 @@ class App:
                 self.unregister_hotkey()
                 converted = False
                 try:
-                    converted = convert_selected(self.settings, action[1], self.notify)
+                    converted = convert_selected(
+                        self.settings, action[1], self.notify,
+                        source=action[2] if len(action) > 2 else None,
+                        previous=action[3] if len(action) > 3 else None,
+                        on_converted=self.remember_conversion,
+                    )
                 except Exception as exc:
                     logger.exception("Conversion window failed")
                     self.notify(str(exc)[:220], "JHenkan: 画面エラー")
@@ -164,9 +178,12 @@ class App:
         self.typing_buffer.stop()
         self.icon.stop()
 
+    def remember_conversion(self, source, result, window) -> None:
+        self.last_conversion = (source, result, window)
+
     def register_hotkey(self) -> None:
         self.unregister_hotkey()
-        self.global_hotkey = GlobalHotkey(self.hotkey)
+        self.global_hotkey = GlobalHotkey(self.hotkey, lambda: self.hotkey(alternate=True))
         try:
             self.global_hotkey.start()
             logger.info("Ctrl+J registered")

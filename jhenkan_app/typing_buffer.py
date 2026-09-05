@@ -9,6 +9,13 @@ import pyperclip
 from .selection import foreground_window
 
 
+def modifier_pressed(name: str) -> bool:
+    """Read live state instead of potentially stale keyboard hook bookkeeping."""
+    keys = {"ctrl": (0x11,), "alt": (0x12,), "windows": (0x5B, 0x5C)}
+    return any(ctypes.windll.user32.GetAsyncKeyState(key) & 0x8000
+               for key in keys[name])
+
+
 class TypingBuffer:
     """Track the contiguous characters typed before the caret."""
 
@@ -93,7 +100,7 @@ class TypingBuffer:
                 self._window = window
 
             name = event.name or ""
-            if keyboard.is_pressed("ctrl"):
+            if modifier_pressed("ctrl"):
                 if name == "v":
                     try:
                         self._items.extend(pyperclip.paste())
@@ -106,7 +113,7 @@ class TypingBuffer:
                     # caret, or rewrite text in ways the hook cannot observe.
                     self._items.clear()
                 return
-            if keyboard.is_pressed("alt") or keyboard.is_pressed("windows"):
+            if modifier_pressed("alt") or modifier_pressed("windows"):
                 return
             if name == "backspace":
                 if self._items:

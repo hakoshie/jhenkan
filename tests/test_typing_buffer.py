@@ -1,10 +1,27 @@
 from types import SimpleNamespace
 
 from jhenkan_app.typing_buffer import TypingBuffer
+from jhenkan_app.typing_buffer import modifier_pressed
 
 
 def press(buffer: TypingBuffer, name: str) -> None:
     buffer._on_press(SimpleNamespace(name=name))
+
+
+def test_released_modifier_ignores_stale_hook_state(monkeypatch):
+    monkeypatch.setattr("jhenkan_app.typing_buffer.foreground_window", lambda: 10)
+    monkeypatch.setattr("jhenkan_app.typing_buffer.keyboard.is_pressed", lambda key: True)
+    monkeypatch.setattr("jhenkan_app.typing_buffer.ctypes.windll.user32.GetAsyncKeyState", lambda key: 0)
+    buffer = TypingBuffer()
+    press(buffer, "a")
+    assert buffer.text() == "a"
+
+
+def test_live_modifier_state_checks_high_bit_and_both_windows_keys(monkeypatch):
+    monkeypatch.setattr("jhenkan_app.typing_buffer.ctypes.windll.user32.GetAsyncKeyState",
+                        lambda key: 0x8000 if key == 0x5C else 1)
+    assert modifier_pressed("windows")
+    assert not modifier_pressed("ctrl")
 
 
 def click(buffer: TypingBuffer) -> None:
@@ -13,7 +30,7 @@ def click(buffer: TypingBuffer) -> None:
 
 def test_tracks_typing_and_backspace(monkeypatch):
     monkeypatch.setattr("jhenkan_app.typing_buffer.foreground_window", lambda: 10)
-    monkeypatch.setattr("jhenkan_app.typing_buffer.keyboard.is_pressed", lambda _key: False)
+    monkeypatch.setattr("jhenkan_app.typing_buffer.modifier_pressed", lambda _key: False)
     buffer = TypingBuffer()
 
     for name in ("n", "i", "h", "o", "n", "g", "o"):
@@ -29,7 +46,7 @@ def test_navigation_and_window_change_clear_buffer(monkeypatch):
     monkeypatch.setattr(
         "jhenkan_app.typing_buffer.foreground_window", lambda: current_window[0]
     )
-    monkeypatch.setattr("jhenkan_app.typing_buffer.keyboard.is_pressed", lambda _key: False)
+    monkeypatch.setattr("jhenkan_app.typing_buffer.modifier_pressed", lambda _key: False)
     buffer = TypingBuffer()
 
     press(buffer, "a")
@@ -44,7 +61,7 @@ def test_navigation_and_window_change_clear_buffer(monkeypatch):
 
 def test_mouse_click_clears_buffer(monkeypatch):
     monkeypatch.setattr("jhenkan_app.typing_buffer.foreground_window", lambda: 10)
-    monkeypatch.setattr("jhenkan_app.typing_buffer.keyboard.is_pressed", lambda _key: False)
+    monkeypatch.setattr("jhenkan_app.typing_buffer.modifier_pressed", lambda _key: False)
     buffer = TypingBuffer()
 
     press(buffer, "a")
@@ -54,7 +71,7 @@ def test_mouse_click_clears_buffer(monkeypatch):
 
 def test_mouse_click_does_not_clear_paused_buffer(monkeypatch):
     monkeypatch.setattr("jhenkan_app.typing_buffer.foreground_window", lambda: 10)
-    monkeypatch.setattr("jhenkan_app.typing_buffer.keyboard.is_pressed", lambda _key: False)
+    monkeypatch.setattr("jhenkan_app.typing_buffer.modifier_pressed", lambda _key: False)
     buffer = TypingBuffer()
 
     press(buffer, "a")
@@ -66,7 +83,7 @@ def test_mouse_click_does_not_clear_paused_buffer(monkeypatch):
 
 def test_enter_is_ignored_without_clearing_buffer(monkeypatch):
     monkeypatch.setattr("jhenkan_app.typing_buffer.foreground_window", lambda: 10)
-    monkeypatch.setattr("jhenkan_app.typing_buffer.keyboard.is_pressed", lambda _key: False)
+    monkeypatch.setattr("jhenkan_app.typing_buffer.modifier_pressed", lambda _key: False)
     buffer = TypingBuffer()
 
     press(buffer, "a")
@@ -80,7 +97,7 @@ def test_clipboard_paste_is_included_in_buffer(monkeypatch):
     pressed = {"ctrl": False}
     monkeypatch.setattr("jhenkan_app.typing_buffer.foreground_window", lambda: 10)
     monkeypatch.setattr(
-        "jhenkan_app.typing_buffer.keyboard.is_pressed",
+        "jhenkan_app.typing_buffer.modifier_pressed",
         lambda key: pressed.get(key, False),
     )
     monkeypatch.setattr("jhenkan_app.typing_buffer.pyperclip.paste", lambda: "paste")
@@ -102,7 +119,7 @@ def test_editing_shortcut_clears_stale_buffer(monkeypatch):
     pressed = {"ctrl": False}
     monkeypatch.setattr("jhenkan_app.typing_buffer.foreground_window", lambda: 10)
     monkeypatch.setattr(
-        "jhenkan_app.typing_buffer.keyboard.is_pressed",
+        "jhenkan_app.typing_buffer.modifier_pressed",
         lambda key: pressed.get(key, False),
     )
     buffer = TypingBuffer()

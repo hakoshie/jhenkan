@@ -1,9 +1,30 @@
 from types import SimpleNamespace
+import json
+import pytest
 from unittest.mock import patch
 
 from jhenkan_app.converter import preserve_outer_whitespace
 from jhenkan_app.converter import JapaneseConverter
 from jhenkan_app.converter import INSTRUCTIONS
+
+
+def test_identical_alternative_does_not_get_pasted():
+    with patch("jhenkan_app.converter.OpenAI") as openai:
+        openai.return_value.responses.create.return_value = SimpleNamespace(output_text="個室")
+        with pytest.raises(RuntimeError, match="別候補が見つかりません"):
+            JapaneseConverter("secret", "gpt-5.6-luna").convert("kositu", previous="個室")
+
+
+def test_alternative_sends_original_and_previous_without_changing_plain_requests():
+    with patch("jhenkan_app.converter.OpenAI") as openai:
+        client = openai.return_value
+        client.responses.create.return_value = SimpleNamespace(output_text="固執")
+        converter = JapaneseConverter("secret", "gpt-5.6-luna")
+        assert converter.convert("kositu", previous="個室") == "固執"
+        call = client.responses.create.call_args.kwargs
+        assert json.loads(call["input"]) == {"source": "kositu", "previous": "個室"}
+        converter.convert("nihongo")
+        assert client.responses.create.call_args.kwargs["input"] == "nihongo"
 
 
 def test_preserves_outer_whitespace():

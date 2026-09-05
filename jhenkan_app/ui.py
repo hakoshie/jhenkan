@@ -261,7 +261,9 @@ def compose_text(
     return retained_text
 
 
-def convert_selected(settings: Settings, captured: CapturedText, notify) -> bool:
+def convert_selected(settings: Settings, captured: CapturedText, notify,
+                     source: str | None = None, previous: str | None = None,
+                     on_converted=None) -> bool:
     """Display a dark progress overlay while replacing selected text."""
     root = tk.Tk()
     root.withdraw()
@@ -331,6 +333,8 @@ def convert_selected(settings: Settings, captured: CapturedText, notify) -> bool
             notify("入力先が変わったため貼り付けませんでした。変換結果はクリップボードにあります。")
         else:
             converted = True
+            if on_converted:
+                on_converted(captured.text if source is None else source, result, captured.window)
         root.destroy()
 
     def failure(exc: Exception) -> None:
@@ -351,7 +355,7 @@ def convert_selected(settings: Settings, captured: CapturedText, notify) -> bool
                 settings.provider,
                 settings.diagnostic_text_logging,
             )
-            root.after(0, success, converter.convert(captured.text))
+            root.after(0, success, converter.convert(captured.text if source is None else source, previous=previous))
         except Exception as exc:
             root.after(0, failure, exc)
 

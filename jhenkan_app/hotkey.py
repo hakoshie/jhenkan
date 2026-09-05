@@ -9,6 +9,7 @@ from typing import Callable
 WM_HOTKEY = 0x0312
 WM_QUIT = 0x0012
 MOD_CONTROL = 0x0002
+MOD_SHIFT = 0x0004
 MOD_NOREPEAT = 0x4000
 HOTKEY_ID = 0x4A48
 
@@ -16,8 +17,9 @@ HOTKEY_ID = 0x4A48
 class GlobalHotkey:
     """A reliable Windows RegisterHotKey-backed Ctrl+J listener."""
 
-    def __init__(self, callback: Callable[[], None]) -> None:
+    def __init__(self, callback: Callable[[], None], alternate: Callable[[], None] | None = None) -> None:
         self.callback = callback
+        self.alternate = alternate
         self.thread: threading.Thread | None = None
         self.thread_id = 0
         self.error_code = 0
@@ -51,6 +53,13 @@ class GlobalHotkey:
             self.ready.set()
             return
         self.error_code = 0
+        if self.alternate and not ctypes.windll.user32.RegisterHotKey(
+            None, HOTKEY_ID + 1, MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT, ord("J")
+        ):
+            self.error_code = int(ctypes.windll.kernel32.GetLastError())
+            ctypes.windll.user32.UnregisterHotKey(None, HOTKEY_ID)
+            self.ready.set()
+            return
         self.ready.set()
         message = wintypes.MSG()
         while ctypes.windll.user32.GetMessageW(
@@ -58,4 +67,8 @@ class GlobalHotkey:
         ) > 0:
             if message.message == WM_HOTKEY and message.wParam == HOTKEY_ID:
                 self.callback()
+            elif message.message == WM_HOTKEY and message.wParam == HOTKEY_ID + 1 and self.alternate:
+                self.alternate()
         ctypes.windll.user32.UnregisterHotKey(None, HOTKEY_ID)
+        if self.alternate:
+            ctypes.windll.user32.UnregisterHotKey(None, HOTKEY_ID + 1)
