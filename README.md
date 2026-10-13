@@ -13,7 +13,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\setup.ps1
 ```
 
-初回の設定画面でプロバイダーを選び、そのAPIキーを入力してください。初期設定はGeminiの `gemini-3.6-flash`、OpenAI側は `gpt-5.6-luna` です。APIキーは設定JSONではなくWindows資格情報マネージャーにプロバイダー別で保存されます。「Windowsへのサインイン時に起動」は初期状態でオンです。
+初回の設定画面でプロバイダーを選び、そのAPIキーを入力してください。初期設定はGeminiの `gemini-3.6-flash`、OpenAI側は `gpt-6-luna` です。旧 `gpt-5.6-luna` の設定は読み込み時に `gpt-6-luna` へ移行します。APIキーは設定JSONではなくWindows資格情報マネージャーにプロバイダー別で保存されます。「Windowsへのサインイン時に起動」は初期状態でオンです。
 
 - Gemini APIキー: <https://aistudio.google.com/api-keys>
 - OpenAI APIキー: <https://platform.openai.com/api-keys>

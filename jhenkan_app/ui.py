@@ -9,7 +9,7 @@ from tkinter import messagebox, ttk
 
 import pyperclip
 
-from .config import Settings, get_api_key, set_api_key, set_startup, startup_enabled
+from .config import DEFAULT_OPENAI_MODEL, Settings, get_api_key, set_api_key, set_startup, startup_enabled
 from .converter import JapaneseConverter
 from .selection import (
     CapturedText,
@@ -120,7 +120,7 @@ def edit_settings(settings: Settings, first_run: bool = False) -> bool:
         models[current_provider] = model_var.get().strip()
         settings.provider = provider
         settings.gemini_model = models["gemini"] or "gemini-3.6-flash"
-        settings.openai_model = models["openai"] or "gpt-5.6-luna"
+        settings.openai_model = models["openai"] or DEFAULT_OPENAI_MODEL
         settings.start_with_windows = startup_var.get()
         settings.diagnostic_text_logging = diagnostic_var.get()
         settings.save()

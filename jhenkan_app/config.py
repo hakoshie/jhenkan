@@ -14,6 +14,7 @@ APP_NAME = "JHenkan"
 KEYRING_USER = "default"
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 PROVIDERS = ("gemini", "openai")
+DEFAULT_OPENAI_MODEL = "gpt-6-luna"
 KEYRING_SERVICES = {
     "openai": "JHenkan OpenAI API",
     "gemini": "JHenkan Gemini API",
@@ -36,7 +37,7 @@ def config_path() -> Path:
 @dataclass
 class Settings:
     provider: str = "gemini"
-    openai_model: str = "gpt-5.6-luna"
+    openai_model: str = DEFAULT_OPENAI_MODEL
     gemini_model: str = "gemini-3.6-flash"
     hotkey: str = "ctrl+j"
     start_with_windows: bool = True
@@ -51,6 +52,8 @@ class Settings:
                 values["openai_model"] = values["model"]
             allowed = cls.__dataclass_fields__.keys()
             settings = cls(**{key: value for key, value in values.items() if key in allowed})
+            if settings.openai_model == "gpt-5.6-luna":
+                settings.openai_model = DEFAULT_OPENAI_MODEL
             if settings.provider not in PROVIDERS:
                 settings.provider = "gemini"
             return settings

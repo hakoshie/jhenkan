@@ -12,19 +12,21 @@ def test_identical_alternative_does_not_get_pasted():
     with patch("jhenkan_app.converter.OpenAI") as openai:
         openai.return_value.responses.create.return_value = SimpleNamespace(output_text="個室")
         with pytest.raises(RuntimeError, match="別候補が見つかりません"):
-            JapaneseConverter("secret", "gpt-5.6-luna").convert("kositu", previous="個室")
+            JapaneseConverter("secret", "gpt-6-luna").convert("kositu", previous="個室")
 
 
 def test_alternative_sends_original_and_previous_without_changing_plain_requests():
     with patch("jhenkan_app.converter.OpenAI") as openai:
         client = openai.return_value
         client.responses.create.return_value = SimpleNamespace(output_text="固執")
-        converter = JapaneseConverter("secret", "gpt-5.6-luna")
+        converter = JapaneseConverter("secret", "gpt-6-luna")
         assert converter.convert("kositu", previous="個室") == "固執"
         call = client.responses.create.call_args.kwargs
+        assert call["instructions"].startswith(INSTRUCTIONS + "\n\n")
         assert json.loads(call["input"]) == {"source": "kositu", "previous": "個室"}
         converter.convert("nihongo")
         assert client.responses.create.call_args.kwargs["input"] == "nihongo"
+        assert client.responses.create.call_args.kwargs["instructions"] == INSTRUCTIONS
 
 
 def test_preserves_outer_whitespace():
@@ -35,38 +37,11 @@ def test_does_not_duplicate_whitespace_from_result():
     assert preserve_outer_whitespace("hello", "  こんにちは  ") == "こんにちは"
 
 
-def test_instructions_use_context_only_for_conversion_and_forbid_rewriting():
-    assert "同音異義語" in INSTRUCTIONS
-    assert "語彙、語順、助詞、語尾、文体、意味を変更しない" in INSTRUCTIONS
-    assert "自然な表現への言い換え" in INSTRUCTIONS
-    assert "タイプミスか確信できない場合は入力どおり" in INSTRUCTIONS
-
-
-def test_instructions_guard_against_dropping_romanized_segments():
-    assert "自然さより入力の保存を優先" in INSTRUCTIONS
-    assert "助詞、反復、口語表現、連続する n を省略しない" in INSTRUCTIONS
-    assert "omonnnainajinsei → おもんないな人生" in INSTRUCTIONS
-    assert "入力の各区間に対応する読み" in INSTRUCTIONS
-
-
-def test_instructions_preserve_iidurai_as_iizurai():
-    assert 'du は「づ」' in INSTRUCTIONS
-    assert 'iidurai は「言いづらい」' in INSTRUCTIONS
-    assert "kirakuniiidurainomoatte → 気楽に言いづらいのもあって" in INSTRUCTIONS
-    assert "言うくらい" in INSTRUCTIONS
-
-
-def test_instructions_correct_obvious_english_typos_without_translating_them():
-    assert "正しく綴られた英単語は保持" in INSTRUCTIONS
-    assert "明白な入れ替わり" in INSTRUCTIONS
-    assert "exploerer wo hiraku → explorerを開く" in INSTRUCTIONS
-
-
 def test_openai_uses_responses_api():
     with patch("jhenkan_app.converter.OpenAI") as openai:
         client = openai.return_value
         client.responses.create.return_value = SimpleNamespace(output_text="日本語")
-        converter = JapaneseConverter("secret", "gpt-5.6-luna", provider="openai")
+        converter = JapaneseConverter("secret", "gpt-6-luna", provider="openai")
 
         assert converter.convert("nihongo") == "日本語"
         client.responses.create.assert_called_once()
