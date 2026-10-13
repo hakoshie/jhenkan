@@ -3,14 +3,20 @@ from __future__ import annotations
 import tkinter as tk
 import tkinter.font as tkfont
 import threading
+import queue
+import gc
+from contextlib import contextmanager
 import ctypes
 import webbrowser
 from tkinter import messagebox, ttk
 
 import pyperclip
 
-from .config import DEFAULT_OPENAI_MODEL, Settings, get_api_key, set_api_key, set_startup, startup_enabled
-from .converter import JapaneseConverter
+from .config import (
+    DEFAULT_OPENAI_MODEL, Settings, get_api_key, set_api_key, set_startup, startup_enabled,
+)
+from .converter import JapaneseConverter, supported_efforts
+from . import chatgpt_auth
 from .selection import (
     CapturedText,
     activate_window,
@@ -20,121 +26,303 @@ from .selection import (
 )
 
 
-def edit_settings(settings: Settings, first_run: bool = False) -> bool:
+@contextmanager
+def gui_thread_lifetime():
+    """Keep Tcl finalizers on the GUI thread, including between modal windows.
+
+    CPython may otherwise collect Tk cycles on an API or keyboard thread,
+    aborting the process with Tcl_AsyncDelete. App collects at GUI safe points.
+    """
+    if threading.current_thread() is not threading.main_thread():
+        raise RuntimeError("JHenkanの画面はメインスレッドで実行してください。")
+    was_enabled = gc.isenabled()
+    gc.disable()
+    try:
+        yield
+    finally:
+        gc.collect()
+        if was_enabled:
+            gc.enable()
+
+
+def poll_background_result(root, results, success, failure):
+    """Workers only enqueue data; Tk callbacks always run on the GUI thread."""
+    try:
+        value, error = results.get_nowait()
+    except queue.Empty:
+        root.after(25, poll_background_result, root, results, success, failure)
+    else:
+        if error is not None:
+            failure(error)
+        else:
+            success(value)
+
+
+def edit_settings(settings: Settings, first_run: bool = False,
+                  connect_chatgpt: bool = False) -> bool:
     root = tk.Tk()
     root.title("JHenkan 設定")
     root.resizable(False, False)
     root.attributes("-topmost", True)
-
     frame = ttk.Frame(root, padding=18)
     frame.grid()
-    ttk.Label(frame, text="プロバイダー").grid(row=0, column=0, sticky="w")
-    provider_var = tk.StringVar(value=settings.provider)
-    provider_box = ttk.Combobox(
-        frame,
-        textvariable=provider_var,
-        values=("gemini", "openai"),
-        state="readonly",
-        width=43,
-    )
+    labels = {"chatgpt": "ChatGPT（ログイン）", "openai": "OpenAI（APIキー）",
+              "gemini": "Gemini（APIキー）"}
+    provider_var = tk.StringVar(value=labels["chatgpt" if connect_chatgpt else settings.provider])
+    ttk.Label(frame, text="接続方法").grid(row=0, column=0, sticky="w")
+    provider_box = ttk.Combobox(frame, textvariable=provider_var,
+                              values=list(labels.values()), state="readonly", width=46)
     provider_box.grid(row=1, column=0, columnspan=2, pady=(3, 10), sticky="ew")
-
     key_label = ttk.Label(frame)
     key_label.grid(row=2, column=0, sticky="w")
-    key_page_button = ttk.Button(
-        frame,
-        text="APIキーを取得",
-        command=lambda: webbrowser.open(
-            "https://aistudio.google.com/api-keys"
-            if provider_var.get() == "gemini"
-            else "https://platform.openai.com/api-keys"
-        ),
-    )
-    key_page_button.grid(row=2, column=1, sticky="e")
     key_var = tk.StringVar()
     key_entry = ttk.Entry(frame, textvariable=key_var, show="●", width=46)
     key_entry.grid(row=3, column=0, columnspan=2, pady=(3, 2), sticky="ew")
-    saved_label = ttk.Label(frame)
+    saved_label = ttk.Label(frame, wraplength=400)
     saved_label.grid(row=4, column=0, columnspan=2, sticky="w")
-
+    key_button = ttk.Button(frame)
+    key_button.grid(row=2, column=1, sticky="e")
     ttk.Label(frame, text="モデル").grid(row=5, column=0, sticky="w", pady=(10, 0))
-    models = {
-        "gemini": settings.gemini_model,
-        "openai": settings.openai_model,
-    }
-    current_provider = settings.provider
+    models = {"gemini": settings.gemini_model, "openai": settings.openai_model,
+              "chatgpt": settings.chatgpt_model}
+    current_provider = "chatgpt" if connect_chatgpt else settings.provider
     model_var = tk.StringVar(value=models[current_provider])
-    ttk.Entry(frame, textvariable=model_var, width=46).grid(
-        row=6, column=0, columnspan=2, pady=(3, 10), sticky="ew"
-    )
+    model_box = ttk.Combobox(frame, textvariable=model_var, width=46)
+    model_box.grid(row=6, column=0, columnspan=2, pady=(3, 10), sticky="ew")
+    account_frame = ttk.Frame(frame)
+    account_frame.grid(row=7, column=0, columnspan=2, sticky="ew")
+    ttk.Label(account_frame, text="ChatGPTアカウント").pack(anchor="w")
+    account_var = tk.StringVar()
+    account_box = ttk.Combobox(account_frame, textvariable=account_var, state="readonly", width=46)
+    account_box.pack(fill="x", pady=(3, 5))
+    account_actions = ttk.Frame(account_frame)
+    account_actions.pack(fill="x", pady=(0, 10))
+    reload_button = ttk.Button(account_actions, text="モデルを再読み込み")
+    reload_button.pack(side="left")
+    logout_button = ttk.Button(account_actions, text="ログアウト")
+    logout_button.pack(side="left", padx=5)
+    ttk.Button(account_actions, text="利用枠を管理",
+               command=lambda: webbrowser.open(chatgpt_auth.USAGE_URL)).pack(side="right")
+    effort_frame = ttk.Frame(frame)
+    effort_frame.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+    ttk.Label(effort_frame, text="推論（none: 速さ優先 / low: 軽く考える）").pack(anchor="w")
+    effort_var = tk.StringVar(value=settings.reasoning_effort)
+    effort_box = ttk.Combobox(effort_frame, textvariable=effort_var, state="readonly", width=46)
+    effort_box.pack(fill="x", pady=(3, 0))
+    startup_var = tk.BooleanVar(value=startup_enabled() or settings.start_with_windows)
+    ttk.Checkbutton(frame, text="Windowsへのサインイン時に起動", variable=startup_var).grid(
+        row=9, column=0, columnspan=2, sticky="w")
+    diagnostic_var = tk.BooleanVar(value=settings.diagnostic_text_logging)
+    ttk.Checkbutton(frame, text="診断ログに変換前・変換後の本文を記録する",
+                    variable=diagnostic_var).grid(row=10, column=0, columnspan=2, sticky="w", pady=(4, 0))
+    ttk.Label(frame, text="ChatGPT接続はPlus／Proの利用枠を使います。\n"
+              "診断ログを有効にすると入力内容が jhenkan.log に残ります。",
+              wraplength=410).grid(row=11, column=0, columnspan=2, pady=(12, 14), sticky="w")
+    saved = False
+    busy = False
+    cancel = threading.Event()
+    results = queue.Queue()
+    pending_done = None
+    account_labels = {}
+    current_account = settings.chatgpt_account
+    if not current_account:
+        registered = chatgpt_auth.accounts()
+        if registered:
+            current_account = registered[-1]["client_id"]
+    available_models = []
 
-    def refresh_provider(_event=None) -> None:
+    def refresh_accounts():
+        account_labels.clear()
+        for item in chatgpt_auth.accounts():
+            label = f"{item['email']} [{item['client_id'][-8:]}]"
+            if not item['connected']:
+                label += "（未接続）"
+            account_labels[label] = item['client_id']
+        account_labels["別のアカウントを追加"] = ""
+        account_box.configure(values=list(account_labels))
+        account_var.set(next((name for name, cid in account_labels.items()
+                              if cid == current_account), "別のアカウントを追加"))
+
+    def update_effort(_event=None):
+        allowed = supported_efforts(model_var.get())
+        effort_box.configure(values=allowed)
+        if effort_var.get() not in allowed:
+            effort_var.set(allowed[0])
+
+    def controls():
+        provider_box.configure(state="disabled" if busy else "readonly")
+        account_box.configure(state="disabled" if busy else "readonly")
+        for button in (key_button, reload_button, logout_button, save_button):
+            button.configure(state="disabled" if busy else "normal")
+
+    def async_work(work, done):
+        nonlocal busy, pending_done
+        if busy:
+            return
+        busy = True
+        pending_done = done
+        controls()
+        def worker():
+            try:
+                results.put((work(), None))
+            except Exception as exc:
+                results.put((None, exc))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def poll():
+        nonlocal busy, current_account, pending_done
+        try:
+            value, error = results.get_nowait()
+        except queue.Empty:
+            pass
+        else:
+            busy = False
+            done, pending_done = pending_done, None
+            controls()
+            if error:
+                root.attributes("-topmost", True)
+                if current_provider == "chatgpt":
+                    registered = chatgpt_auth.accounts()
+                    if not current_account and registered:
+                        current_account = registered[-1]["client_id"]
+                    refresh_accounts()
+                saved_label.configure(text="接続を確認してください。")
+                messagebox.showerror("JHenkan", str(error), parent=root)
+            else:
+                done(value)
+        root.after(100, poll)
+
+    def loaded(items):
+        available_models[:] = items
+        choices = [item['slug'] for item in items]
+        model_box.configure(values=choices)
+        if model_var.get() not in choices:
+            model_var.set(DEFAULT_OPENAI_MODEL if DEFAULT_OPENAI_MODEL in choices else "")
+        update_effort()
+        saved_label.configure(text="ChatGPT接続済み。モデルを選んで保存してください。")
+
+    def load_models():
+        available_models.clear()
+        model_box.configure(values=())
+        if not current_account or not chatgpt_auth.connected(current_account):
+            return
+        saved_label.configure(text="使えるモデルを確認中…")
+        async_work(lambda: chatgpt_auth.list_models(current_account), loaded)
+
+    def signed_in(cid):
+        nonlocal current_account
+        root.attributes("-topmost", True)
+        root.lift()
+        current_account = cid
+        refresh_accounts()
+        load_models()
+
+    def login():
+        root.attributes("-topmost", False)
+        saved_label.configure(text="ブラウザーでChatGPTにログインしてください…")
+        cid = current_account
+        async_work(lambda: chatgpt_auth.sign_in(cid, cancel), signed_in)
+
+    def logout():
+        def finished(confirmed):
+            available_models.clear()
+            model_box.configure(values=())
+            refresh_accounts()
+            saved_label.configure(text="ログアウトしました（ChatGPT側の登録は残ります）。")
+            if not confirmed:
+                messagebox.showinfo("JHenkan", "このPCではログアウトしました。サーバー側の解除は確認できなかったため、ChatGPTの設定から接続を解除してください。", parent=root)
+        cid = current_account
+        async_work(lambda: chatgpt_auth.sign_out(cid), finished)
+
+    def selected_account(_event=None):
+        nonlocal current_account
+        current_account = account_labels.get(account_var.get(), "")
+        saved_label.configure(text="Continue with ChatGPTで接続してください。")
+        load_models()
+
+    def refresh_provider(_event=None):
         nonlocal current_provider
         models[current_provider] = model_var.get().strip()
-        current_provider = provider_var.get()
+        current_provider = next(key for key, label in labels.items() if label == provider_var.get())
         model_var.set(models[current_provider])
         key_var.set("")
-        key_label.configure(
-            text="Gemini APIキー" if current_provider == "gemini" else "OpenAI APIキー"
-        )
-        saved_label.configure(
-            text="保存済み（空欄なら変更しません）"
-            if get_api_key(current_provider)
-            else "未登録"
-        )
+        is_chatgpt = current_provider == "chatgpt"
+        model_box.configure(state="readonly" if is_chatgpt else "normal",
+                            values=() if is_chatgpt else (DEFAULT_OPENAI_MODEL, "gpt-6.1-sol"))
+        if is_chatgpt:
+            key_entry.grid_remove()
+            account_frame.grid()
+            key_label.configure(text="ChatGPTに接続")
+            key_button.configure(text="Continue with ChatGPT", command=login)
+            saved_label.configure(text="Continue with ChatGPTで接続してください。")
+            refresh_accounts()
+            load_models()
+        else:
+            key_entry.grid()
+            account_frame.grid_remove()
+            key_label.configure(text="Gemini APIキー" if current_provider == "gemini" else "OpenAI APIキー")
+            key_button.configure(text="APIキーを取得", command=lambda: webbrowser.open(
+                "https://aistudio.google.com/api-keys" if current_provider == "gemini"
+                else "https://platform.openai.com/api-keys"))
+            saved_label.configure(text="保存済み（空欄なら変更しません）" if get_api_key(current_provider) else "未登録")
+        if current_provider == "gemini":
+            effort_frame.grid_remove()
+            model_box.configure(values=("gemini-3.6-flash",))
+        else:
+            effort_frame.grid()
+        update_effort()
 
-    provider_box.bind("<<ComboboxSelected>>", refresh_provider)
-    refresh_provider()
-
-    startup_var = tk.BooleanVar(value=startup_enabled() or settings.start_with_windows)
-    ttk.Checkbutton(
-        frame, text="Windowsへのサインイン時に起動", variable=startup_var
-    ).grid(row=7, column=0, columnspan=2, sticky="w")
-    diagnostic_var = tk.BooleanVar(value=settings.diagnostic_text_logging)
-    ttk.Checkbutton(
-        frame,
-        text="診断ログに変換前・変換後の本文を記録する",
-        variable=diagnostic_var,
-    ).grid(row=8, column=0, columnspan=2, sticky="w", pady=(4, 0))
-    ttk.Label(
-        frame,
-        text="注意: 診断ログを有効にすると入力内容が jhenkan.log に残ります。\n"
-        "使い方: 未選択でCtrl+Jなら未確定入力。選択中なら直接再変換。",
-        wraplength=390,
-    ).grid(row=9, column=0, columnspan=2, pady=(12, 14), sticky="w")
-
-    saved = False
-
-    def save() -> None:
+    def save():
         nonlocal saved
-        provider = provider_var.get()
-        if not get_api_key(provider) and not key_var.get().strip():
-            messagebox.showerror("JHenkan", f"{provider} APIキーを入力してください", parent=root)
-            return
-        if key_var.get().strip():
-            try:
-                set_api_key(provider, key_var.get().strip())
-            except Exception as exc:
-                messagebox.showerror("JHenkan", f"APIキーを保存できません: {exc}", parent=root)
+        if current_provider == "chatgpt":
+            if not current_account or not chatgpt_auth.connected(current_account):
+                messagebox.showerror("JHenkan", "ChatGPTにログインしてください。", parent=root)
                 return
-        models[current_provider] = model_var.get().strip()
-        settings.provider = provider
-        settings.gemini_model = models["gemini"] or "gemini-3.6-flash"
-        settings.openai_model = models["openai"] or DEFAULT_OPENAI_MODEL
-        settings.start_with_windows = startup_var.get()
-        settings.diagnostic_text_logging = diagnostic_var.get()
-        settings.save()
-        set_startup(settings.start_with_windows)
+            if model_var.get() not in [item['slug'] for item in available_models]:
+                messagebox.showerror("JHenkan", "モデルを再読み込みして、使えるモデルを選んでください。", parent=root)
+                return
+        elif not get_api_key(current_provider) and not key_var.get().strip():
+            messagebox.showerror("JHenkan", "APIキーを入力してください。", parent=root)
+            return
+        try:
+            if current_provider != "chatgpt" and key_var.get().strip():
+                set_api_key(current_provider, key_var.get().strip())
+            models[current_provider] = model_var.get().strip()
+            settings.provider = current_provider
+            settings.gemini_model = models["gemini"] or "gemini-3.6-flash"
+            settings.openai_model = models["openai"] or DEFAULT_OPENAI_MODEL
+            settings.chatgpt_model = models["chatgpt"] or DEFAULT_OPENAI_MODEL
+            settings.chatgpt_account = current_account
+            settings.reasoning_effort = effort_var.get()
+            settings.start_with_windows = startup_var.get()
+            settings.diagnostic_text_logging = diagnostic_var.get()
+            settings.save()
+            set_startup(settings.start_with_windows)
+        except Exception as exc:
+            messagebox.showerror("JHenkan", f"設定を保存できません: {exc}", parent=root)
+            return
         saved = True
+        close()
+
+    def close():
+        cancel.set()
         root.destroy()
 
-    ttk.Button(frame, text="保存", command=save).grid(row=10, column=1, sticky="e")
+    save_button = ttk.Button(frame, text="保存", command=save)
+    save_button.grid(row=12, column=1, sticky="e")
     if not first_run:
-        ttk.Button(frame, text="キャンセル", command=root.destroy).grid(
-            row=10, column=0, sticky="e", padx=(0, 8)
-        )
-    root.protocol("WM_DELETE_WINDOW", root.destroy)
-    key_entry.focus_set()
+        ttk.Button(frame, text="キャンセル", command=close).grid(row=12, column=0, sticky="e", padx=(0, 8))
+    provider_box.bind("<<ComboboxSelected>>", refresh_provider)
+    account_box.bind("<<ComboboxSelected>>", selected_account)
+    model_box.bind("<<ComboboxSelected>>", update_effort)
+    model_box.bind("<FocusOut>", update_effort)
+    reload_button.configure(command=load_models)
+    logout_button.configure(command=logout)
+    root.protocol("WM_DELETE_WINDOW", close)
+    refresh_provider()
+    root.after(100, poll)
+    if connect_chatgpt and not busy:
+        root.after(250, login)
     root.mainloop()
     return saved
 
@@ -234,22 +422,25 @@ def compose_text(
         if len(summary) > 60:
             summary = summary[:57] + "…"
         status.configure(text=f"「{summary}」を変換中…")
+        results = queue.Queue()
 
         def worker() -> None:
             try:
                 converter = JapaneseConverter(
-                    get_api_key(settings.provider),
+                    get_api_key(settings.provider, settings.chatgpt_account),
                     settings.model,
                     settings.api_timeout_seconds,
                     settings.provider,
                     settings.diagnostic_text_logging,
+                    reasoning_effort=settings.reasoning_effort,
                 )
                 result = converter.convert(source)
-                root.after(0, finish, result)
+                results.put((result, None))
             except Exception as exc:
-                root.after(0, fail, exc)
+                results.put((None, exc))
 
         threading.Thread(target=worker, daemon=True).start()
+        root.after(25, poll_background_result, root, results, finish, fail)
         return "break"
 
     entry.bind("<Control-j>", convert)
@@ -346,19 +537,24 @@ def convert_selected(settings: Settings, captured: CapturedText, notify,
         notify(str(exc)[:220], "JHenkan: 変換エラー")
         root.after(3500, root.destroy)
 
+    results = queue.Queue()
+
     def worker() -> None:
         try:
             converter = JapaneseConverter(
-                get_api_key(settings.provider),
+                get_api_key(settings.provider, settings.chatgpt_account),
                 settings.model,
                 settings.api_timeout_seconds,
                 settings.provider,
                 settings.diagnostic_text_logging,
+                reasoning_effort=settings.reasoning_effort,
             )
-            root.after(0, success, converter.convert(captured.text if source is None else source, previous=previous))
+            result = converter.convert(captured.text if source is None else source, previous=previous)
+            results.put((result, None))
         except Exception as exc:
-            root.after(0, failure, exc)
+            results.put((None, exc))
 
     threading.Thread(target=worker, daemon=True).start()
+    root.after(25, poll_background_result, root, results, success, failure)
     root.mainloop()
     return converted

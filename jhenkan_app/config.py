@@ -13,7 +13,7 @@ import keyring
 APP_NAME = "JHenkan"
 KEYRING_USER = "default"
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
-PROVIDERS = ("gemini", "openai")
+PROVIDERS = ("gemini", "openai", "chatgpt")
 DEFAULT_OPENAI_MODEL = "gpt-6-luna"
 KEYRING_SERVICES = {
     "openai": "JHenkan OpenAI API",
@@ -36,9 +36,12 @@ def config_path() -> Path:
 
 @dataclass
 class Settings:
-    provider: str = "gemini"
+    provider: str = "chatgpt"
     openai_model: str = DEFAULT_OPENAI_MODEL
     gemini_model: str = "gemini-3.6-flash"
+    chatgpt_model: str = DEFAULT_OPENAI_MODEL
+    chatgpt_account: str = ""
+    reasoning_effort: str = "none"
     hotkey: str = "ctrl+j"
     start_with_windows: bool = True
     diagnostic_text_logging: bool = False
@@ -55,7 +58,9 @@ class Settings:
             if settings.openai_model == "gpt-5.6-luna":
                 settings.openai_model = DEFAULT_OPENAI_MODEL
             if settings.provider not in PROVIDERS:
-                settings.provider = "gemini"
+                settings.provider = "chatgpt"
+            if settings.reasoning_effort not in ("none", "low"):
+                settings.reasoning_effort = "none"
             return settings
         except (FileNotFoundError, json.JSONDecodeError, TypeError):
             return cls()
@@ -68,11 +73,23 @@ class Settings:
 
     @property
     def model(self) -> str:
+        if self.provider == "chatgpt":
+            return self.chatgpt_model
         return self.gemini_model if self.provider == "gemini" else self.openai_model
 
 
-def get_api_key(provider: str) -> str:
-    if provider not in PROVIDERS:
+def has_credentials(settings: Settings) -> bool:
+    if settings.provider == "chatgpt":
+        from .chatgpt_auth import connected
+        return connected(settings.chatgpt_account)
+    return bool(get_api_key(settings.provider))
+
+
+def get_api_key(provider: str, chatgpt_account: str = "") -> str:
+    if provider == "chatgpt":
+        from .chatgpt_auth import access_token
+        return access_token(chatgpt_account)
+    if provider not in KEYRING_SERVICES:
         return ""
     return keyring.get_password(KEYRING_SERVICES[provider], KEYRING_USER) or os.getenv(
         KEY_ENVIRONMENTS[provider], ""
@@ -80,7 +97,7 @@ def get_api_key(provider: str) -> str:
 
 
 def set_api_key(provider: str, value: str) -> None:
-    if value:
+    if value and provider in KEYRING_SERVICES:
         keyring.set_password(KEYRING_SERVICES[provider], KEYRING_USER, value)
 
 

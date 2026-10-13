@@ -6,10 +6,11 @@ import jhenkan_app.config as config
 from jhenkan_app.config import Settings
 
 
-def test_default_provider_is_gemini_36():
+def test_default_provider_is_chatgpt_luna():
     settings = Settings()
-    assert settings.provider == "gemini"
-    assert settings.model == "gemini-3.6-flash"
+    assert settings.provider == "chatgpt"
+    assert settings.model == "gpt-6-luna"
+    assert settings.reasoning_effort == "none"
     assert settings.diagnostic_text_logging is False
 
 

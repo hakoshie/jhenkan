@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import gc
 import logging
 import queue
 import sys
@@ -11,7 +12,7 @@ import pystray
 from PIL import Image, ImageDraw
 from pystray import MenuItem as Item
 
-from jhenkan_app.config import Settings, get_api_key
+from jhenkan_app.config import Settings, has_credentials, config_path
 from jhenkan_app.hotkey import GlobalHotkey
 from jhenkan_app.selection import (
     capture_buffered_text,
@@ -19,7 +20,8 @@ from jhenkan_app.selection import (
     capture_selection_or_line,
 )
 from jhenkan_app.typing_buffer import TypingBuffer
-from jhenkan_app.ui import convert_selected, edit_settings
+from jhenkan_app.tray import TrayIcon
+from jhenkan_app.ui import convert_selected, edit_settings, gui_thread_lifetime
 
 
 MUTEX_NAME = "Local\\JHenkan-7f44f5c6"
@@ -58,7 +60,7 @@ class App:
         self.last_conversion: tuple[str, str, int] | None = None
         self.typing_buffer = TypingBuffer()
         self.actions: queue.Queue[str] = queue.Queue()
-        self.icon = pystray.Icon(
+        self.icon = TrayIcon(
             "JHenkan",
             tray_image(),
             "JHenkan — Ctrl+Jで変換",
@@ -116,10 +118,10 @@ class App:
                 self.notify("変換対象がありません。文字を入力してからCtrl+Jを押してください。")
                 return
             logger.info("Captured %d characters", len(captured.text))
-            api_key = get_api_key(self.settings.provider)
-            if not api_key:
+            if not has_credentials(self.settings):
                 self.notify(
-                    f"設定画面で{self.settings.provider} APIキーを登録してください",
+                    "設定画面でChatGPTにログインしてください" if self.settings.provider == "chatgpt"
+                    else f"設定画面で{self.settings.provider} APIキーを登録してください",
                     "JHenkan: 設定が必要です",
                 )
                 self.actions.put("settings")
@@ -135,17 +137,33 @@ class App:
             self.busy.release()
 
     def run(self) -> None:
-        if not get_api_key(self.settings.provider):
+        with gui_thread_lifetime():
+            self._run()
+
+    def _run(self) -> None:
+        if "--connect-chatgpt" in sys.argv:
+            edit_settings(self.settings, connect_chatgpt=True)
+            self.settings = Settings.load()
+            gc.collect()
+        elif not has_credentials(self.settings) and not config_path().exists():
             edit_settings(self.settings, first_run=True)
             self.settings = Settings.load()
-            if not get_api_key(self.settings.provider):
-                return
+            gc.collect()
         self.icon.run_detached()
         self.typing_buffer.start()
         self.register_hotkey()
-        self.notify("起動しました。Ctrl+Jで未確定入力、選択範囲は直接再変換できます。")
+        self.notify(
+            "起動しました。Ctrl+Jで未確定入力、選択範囲は直接再変換できます。"
+            if has_credentials(self.settings)
+            else "常駐を開始しました。変換するにはトレイの設定からログイン・APIキー登録を行ってください。"
+        )
         while True:
-            action = self.actions.get()
+            # Tcl interpreters and variables must be finalized by this thread.
+            gc.collect()
+            try:
+                action = self.actions.get(timeout=1.0)
+            except queue.Empty:
+                continue
             if action == "quit":
                 break
             if isinstance(action, tuple) and action[0] == "convert":
@@ -171,6 +189,9 @@ class App:
                 try:
                     if edit_settings(self.settings):
                         self.register_hotkey()
+                except Exception:
+                    logger.exception("Settings window failed")
+                    self.notify("設定画面を開けませんでした。常駐は継続しています。")
                 finally:
                     self.typing_buffer.clear()
                     self.typing_buffer.resume()

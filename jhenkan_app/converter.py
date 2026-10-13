@@ -9,6 +9,12 @@ from openai import OpenAI
 logger = logging.getLogger("jhenkan")
 
 
+def supported_efforts(model: str) -> tuple[str, ...]:
+    if model.startswith(("gpt-6-sol", "gpt-6.1-sol", "gpt-6-astra")):
+        return ("low",)
+    return ("none", "low")
+
+
 INSTRUCTIONS = """あなたは日本語IMEの変換エンジンです。
 ローマ字・かな・漢字・英語が混ざった入力を、普段の日本語として自然に読める漢字かな交じり文に変換してください。
 
@@ -40,8 +46,9 @@ class JapaneseConverter:
         timeout: float = 30.0,
         provider: str = "openai",
         diagnostic_text_logging: bool = False,
+        reasoning_effort: str = "none",
     ) -> None:
-        if provider not in {"openai", "gemini"}:
+        if provider not in {"openai", "gemini", "chatgpt"}:
             raise ValueError(f"未対応のプロバイダーです: {provider}")
         options = {"api_key": api_key, "timeout": timeout, "max_retries": 1}
         if provider == "gemini":
@@ -50,6 +57,8 @@ class JapaneseConverter:
         self.model = model
         self.provider = provider
         self.diagnostic_text_logging = diagnostic_text_logging
+        efforts = supported_efforts(model)
+        self.reasoning_effort = reasoning_effort if reasoning_effort in efforts else efforts[0]
 
     def convert(self, source: str, previous: str | None = None) -> str:
         if not source.strip():
@@ -78,12 +87,33 @@ class JapaneseConverter:
                 max_tokens=1024,
             )
             result = response.choices[0].message.content
+        elif self.provider == "chatgpt":
+            chunks = []
+            completed = False
+            with self.client.responses.create(
+                model=self.model,
+                instructions=instructions,
+                input=[{"role": "user", "content": request_input}],
+                reasoning={"effort": self.reasoning_effort},
+                store=False,
+                stream=True,
+            ) as stream:
+                for event in stream:
+                    if event.type == "response.output_text.delta":
+                        chunks.append(event.delta)
+                    elif event.type == "response.completed":
+                        completed = True
+                    elif event.type in {"response.failed", "response.incomplete", "error"}:
+                        raise RuntimeError("ChatGPTで変換を完了できませんでした。設定の接続状態と利用枠を確認してください。")
+            if not completed:
+                raise RuntimeError("ChatGPTの応答が途中で終了しました。元の入力を保持します。")
+            result = "".join(chunks)
         else:
             response = self.client.responses.create(
                 model=self.model,
                 instructions=instructions,
                 input=request_input,
-                reasoning={"effort": "none"},
+                reasoning={"effort": self.reasoning_effort},
                 max_output_tokens=1024,
                 store=False,
             )

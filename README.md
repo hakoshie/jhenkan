@@ -1,6 +1,6 @@
 # JHenkan
 
-Windows上のどのアプリでも `Ctrl+J` でローマ字・かなを自然な漢字かな交じり文へ変換する、軽量な常駐ツールです。無料枠のあるGoogle GeminiとOpenAI APIを切り替えられます。
+Windows上のどのアプリでも `Ctrl+J` でローマ字・かなを自然な漢字かな交じり文へ変換する、軽量な常駐ツールです。ChatGPTログイン、Google Gemini、OpenAI APIを切り替えられます。
 
 ## インストール
 
@@ -13,7 +13,11 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\setup.ps1
 ```
 
-初回の設定画面でプロバイダーを選び、そのAPIキーを入力してください。初期設定はGeminiの `gemini-3.6-flash`、OpenAI側は `gpt-6-luna` です。旧 `gpt-5.6-luna` の設定は読み込み時に `gpt-6-luna` へ移行します。APIキーは設定JSONではなくWindows資格情報マネージャーにプロバイダー別で保存されます。「Windowsへのサインイン時に起動」は初期状態でオンです。
+初回の設定画面で「ChatGPT（ログイン）」→「Continue with ChatGPT」を押し、ブラウザーでログインしてプランの利用を許可してください。対象のChatGPT Plus／ProアカウントではAPIキーなしで利用枠を使えます。設定画面に戻り、モデルを選んで「保存」を押します。利用枠や接続の解除は「利用枠を管理」から確認できます。
+
+初期モデルは `gpt-6-luna`、推論は `none`（速さ優先）です。アカウントで使えるモデル一覧からSolなどへ変更できます。Lunaは `none`／`low`、`gpt-6.1-sol` は `low` を使います。`low` は推論ありのため、即時応答を保証する設定ではありません。Lunaが一覧にない場合は利用できるモデルを選んでください。接続したアカウントの変更、追加、ログアウトも設定画面で行えます。ログアウトは認証セッションを解除し、このPCのトークンを消去しますが、ChatGPT側のアプリ登録は残ります。再ログインや認証失敗後の再試行では既存の登録を選んでください。「別のアカウントを追加」は新しい登録を作成します。
+
+APIキー方式を使う場合は「Gemini（APIキー）」または「OpenAI（APIキー）」を選び、キーを入力します。Geminiの初期モデルは `gemini-3.6-flash`、OpenAI側は `gpt-6-luna` です。旧 `gpt-5.6-luna` の設定は読み込み時に `gpt-6-luna` へ移行します。既存の接続方法はそのまま読み込まれます。「Windowsへのサインイン時に起動」は初期状態でオンです。
 
 - Gemini APIキー: <https://aistudio.google.com/api-keys>
 - OpenAI APIキー: <https://platform.openai.com/api-keys>
@@ -25,7 +29,9 @@ Set-ExecutionPolicy -Scope Process Bypass
 - 選択せず `Ctrl+J`: 前回の変換後からカーソル手前へ入力した文字列を変換
 - 直前の変換結果を選択して `Ctrl+Shift+J`: 元の入力から別候補へ再変換（同じウィンドウ内の直前の結果のみ。追加のAPI呼び出しが発生します）
 - 変換したい文字を選択して `Ctrl+J`: 選択部分を直接再変換
-- タスクトレイの `J` アイコン: 一時停止、設定、終了
+- タスクトレイの `J` アイコンを左クリックまたは右クリック: 一時停止、設定、終了
+
+ログアウト中でも常駐は続きます。既存の設定がある場合、再起動時にログイン画面を自動で開くことはありません。変換を再開するときはトレイの「設定」から接続してください。初回設定をキャンセルした場合も、トレイから設定を開き直せます。
 
 例: `ashita 10ji ni toukyou eki de aimashou` → `明日10時に東京駅で会いましょう`
 
@@ -37,11 +43,11 @@ Set-ExecutionPolicy -Scope Process Bypass
 
 ## APIとプライバシー
 
-変換対象の文字列だけを、設定中のGeminiまたはOpenAI APIへ送信します。モデルとプロバイダーは設定画面で変更できます。APIキーはWindows資格情報マネージャーに保存され、リポジトリ内のファイルには保存されません。通常の診断ログには入力本文やAPIキーを記録しません。設定で診断ログモードを有効にした場合だけ、変換前・変換後の本文を `jhenkan.log` に記録します。調査後は無効にしてください。
+変換対象の文字列だけを、設定中のGeminiまたはOpenAI APIへ送信します。モデルと接続方法は設定画面で変更できます。ChatGPTログインは[公式のSign in with ChatGPT](https://developers.openai.com/siwc/token-sharing-open-source/sign-in)を使い、ChatGPTの会話履歴へはアクセスしません。認証情報はWindowsのDPAPIで暗号化し、`%LOCALAPPDATA%\JHenkan\chatgpt-auth.bin` に保存します。期限が近づいたアクセストークンは自動更新します。APIキーはWindows資格情報マネージャーに保存されます。認証情報はリポジトリやログには保存しません。通常の診断ログには入力本文も記録しません。設定で診断ログモードを有効にした場合だけ、変換前・変換後の本文を `jhenkan.log` に記録します。調査後は無効にしてください。
 
 ## 謝辞
 
-このツールは、[Sumibi](https://github.com/kiyoka/Sumibi) の「ローマ字を入力して `Ctrl+J` で日本語へ変換する」という操作体験に着想を得ています。JHenkanは任意のWindowsアプリで動作させるための独立したPython実装で、Sumibiのソースコードは含みません。SumibiはGNU GPL v3で公開されています。
+このツールは、[Sumibi](https://github.com/kiyoka/Sumibi) の「ローマ字を入力して `Ctrl+J` で日本語へ変換する」という操作体験に着想を得ています。
 
 JHenkanは[MIT License](LICENSE)で公開しています。
 

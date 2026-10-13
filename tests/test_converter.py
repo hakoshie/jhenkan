@@ -64,3 +64,30 @@ def test_gemini_uses_openai_compatible_chat_api():
         assert call["model"] == "gemini-3.6-flash"
         assert call["reasoning_effort"] == "low"
         client.responses.create.assert_not_called()
+
+
+def test_chatgpt_streams_with_supported_fields_and_applies_sol_low():
+    events = [SimpleNamespace(type="response.output_text.delta", delta="日本"),
+              SimpleNamespace(type="response.output_text.delta", delta="語"),
+              SimpleNamespace(type="response.completed")]
+    with patch("jhenkan_app.converter.OpenAI") as openai:
+        request = openai.return_value.responses.create
+        request.return_value.__enter__.return_value = iter(events)
+        converter = JapaneseConverter("oauth-secret", "gpt-6.1-sol", provider="chatgpt")
+        assert converter.convert("  nihongo\n") == "  日本語\n"
+        kwargs = request.call_args.kwargs
+        assert kwargs["stream"] is True and kwargs["store"] is False
+        assert kwargs["input"] == [{"role": "user", "content": "  nihongo\n"}]
+        assert kwargs["reasoning"] == {"effort": "low"}
+        assert "max_output_tokens" not in kwargs
+
+
+@pytest.mark.parametrize("ending", ["response.failed", "response.incomplete", "error", None])
+def test_chatgpt_rejects_partial_results(ending):
+    events = [SimpleNamespace(type="response.output_text.delta", delta="途中")]
+    if ending:
+        events.append(SimpleNamespace(type=ending))
+    with patch("jhenkan_app.converter.OpenAI") as openai:
+        openai.return_value.responses.create.return_value.__enter__.return_value = iter(events)
+        with pytest.raises(RuntimeError):
+            JapaneseConverter("oauth-secret", "gpt-6-luna", provider="chatgpt").convert("totyuu")
