@@ -20,7 +20,7 @@ from jhenkan_app.selection import (
     capture_selection_or_line,
 )
 from jhenkan_app.typing_buffer import TypingBuffer
-from jhenkan_app.tray import TrayIcon
+from jhenkan_app.tray import TrayIcon, set_app_identity
 from jhenkan_app.ui import convert_selected, edit_settings, gui_thread_lifetime
 
 
@@ -219,4 +219,5 @@ class App:
 if __name__ == "__main__":
     mutex = single_instance()
     if mutex is not None:
+        set_app_identity("hakoshie.JHenkan")
         App().run()
