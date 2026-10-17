@@ -24,6 +24,7 @@ from jhenkan_app.tray import TrayIcon
 from jhenkan_app.ui import convert_selected, edit_settings, gui_thread_lifetime
 
 
+ICON_PATH = Path(__file__).with_name('assets') / 'jhenkan-d-kan.ico'
 MUTEX_NAME = "Local\\JHenkan-7f44f5c6"
 LOG_PATH = Path(__file__).with_name("jhenkan.log")
 logging.basicConfig(
@@ -43,12 +44,8 @@ def single_instance() -> object | None:
 
 
 def tray_image() -> Image.Image:
-    image = Image.new("RGB", (64, 64), "#202124")
-    draw = ImageDraw.Draw(image)
-    draw.rounded_rectangle((5, 5, 59, 59), radius=13, fill="#f5f5f5")
-    draw.text((17, 12), "J", fill="#202124", stroke_width=1)
-    draw.text((31, 29), "J", fill="#2563eb", stroke_width=1)
-    return image
+    with Image.open(ICON_PATH.with_suffix('.png')) as image:
+        return image.copy()
 
 
 class App:
@@ -64,6 +61,7 @@ class App:
             "JHenkan",
             tray_image(),
             "JHenkan — Ctrl+Jで変換",
+            icon_file=ICON_PATH,
             menu=pystray.Menu(
                 Item("一時停止", self.toggle_pause, checked=lambda _item: self.paused),
                 Item("設定", lambda _icon, _item: self.actions.put("settings")),
