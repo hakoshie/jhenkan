@@ -77,8 +77,19 @@ class TrayIcon(pystray.Icon):
         return super()._on_notify(wparam, lparam)
 
 
-def set_app_identity(app_id):
+def set_app_identity(app_id, display_name, icon_path):
     """Keep this app's sender identity separate from the shared Python runtime."""
+    import winreg
+    from pathlib import Path
+    # Per-app metadata only; no notification preferences, startup or OS cache changes.
+    icon = Path(icon_path).resolve(strict=True)
+    if icon.suffix.lower() != '.png':
+        raise ValueError('Notification identity requires the approved PNG icon')
+    with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER,
+            'Software\\Classes\\AppUserModelId\\' + app_id,
+            access=winreg.KEY_SET_VALUE) as key:
+        winreg.SetValueEx(key, 'DisplayName', 0, winreg.REG_SZ, display_name)
+        winreg.SetValueEx(key, 'IconUri', 0, winreg.REG_SZ, str(icon))
     function = ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID
     function.argtypes = (ctypes.c_wchar_p,)
     function.restype = ctypes.c_long

@@ -219,5 +219,5 @@ class App:
 if __name__ == "__main__":
     mutex = single_instance()
     if mutex is not None:
-        set_app_identity("hakoshie.JHenkan")
+        set_app_identity("JHenkan", "JHenkan", ICON_PATH.with_suffix(".png"))
         App().run()

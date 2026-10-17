@@ -29,3 +29,28 @@ def test_notification_handle_is_released():
     assert handle
     icon._release_icon()
     assert icon._notification_icon_handle is None
+
+
+def test_identity_registers_only_app_metadata_and_preserves_other_values():
+    import uuid,winreg
+    app_id='NotificationIdentityTest.'+uuid.uuid4().hex
+    subkey='Software\\Classes\\AppUserModelId\\'+app_id
+    with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER,subkey) as key:
+        winreg.SetValueEx(key,'UnrelatedExistingValue',0,winreg.REG_SZ,'preserve')
+    try:
+        module.set_app_identity(app_id,'JTranslate',asset.with_suffix('.png'))
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,subkey) as key:
+            assert winreg.QueryValueEx(key,'DisplayName')[0]=='JTranslate'
+            assert winreg.QueryValueEx(key,'IconUri')[0]==str(asset.with_suffix('.png').resolve())
+            assert winreg.QueryValueEx(key,'UnrelatedExistingValue')[0]=='preserve'
+    finally:
+        winreg.DeleteKey(winreg.HKEY_CURRENT_USER,subkey)
+
+
+def test_identity_rejects_missing_icon_before_registration():
+    import pytest,uuid,winreg
+    app_id='NotificationIdentityTest.'+uuid.uuid4().hex
+    with pytest.raises(FileNotFoundError):
+        module.set_app_identity(app_id,'JTranslate',asset.with_name('missing.png'))
+    with pytest.raises(FileNotFoundError):
+        winreg.OpenKey(winreg.HKEY_CURRENT_USER,'Software\\Classes\\AppUserModelId\\'+app_id)

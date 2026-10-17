@@ -1,5 +1,5 @@
 """Send only a synthetic notification and inspect actual Windows API payloads."""
-import argparse,ctypes,importlib,json,sys,threading,time
+import argparse,ctypes,importlib,json,sys,threading,time,uuid
 from pathlib import Path
 from unittest.mock import patch
 from PIL import Image,ImageChops
@@ -26,10 +26,16 @@ def draw_handle(hicon,n):
 
 parser=argparse.ArgumentParser();parser.add_argument('--repo',type=Path,default=Path(__file__).resolve().parents[1]);parser.add_argument('--app',choices=['JHenkan','JTranslate'],default='JHenkan');args=parser.parse_args()
 sys.path.insert(0,str(args.repo));package=args.app.lower()+'_app';module=importlib.import_module(package+'.tray')
-module.set_app_identity('hakoshie.'+args.app)
+asset=next((args.repo/'assets').glob('*.ico'))
+module.set_app_identity(args.app,args.app,asset.with_suffix('.png'))
+import winreg
+with winreg.OpenKey(winreg.HKEY_CURRENT_USER,'Software\\Classes\\AppUserModelId\\'+args.app) as metadata:
+    display_name=winreg.QueryValueEx(metadata,'DisplayName')[0]
+    assert display_name==args.app
+    assert winreg.QueryValueEx(metadata,'IconUri')[0]==str(asset.with_suffix('.png').resolve())
 appid=ctypes.c_void_p();get=ctypes.windll.shell32.GetCurrentProcessExplicitAppUserModelID;get.argtypes=(ctypes.POINTER(ctypes.c_void_p),)
 assert get(ctypes.byref(appid))==0
-try:assert ctypes.wstring_at(appid)=='hakoshie.'+args.app
+try:assert ctypes.wstring_at(appid)==args.app
 finally:ctypes.windll.ole32.CoTaskMemFree(ctypes.c_void_p(appid.value))
 asset=next((args.repo/'assets').glob('*.ico'));seen=[];ready=threading.Event();shown=threading.Event()
 class Probe(module.TrayIcon):
@@ -56,10 +62,12 @@ with patch.object(module.win32,'Shell_NotifyIcon',send):
     icon.run_detached(setup=lambda item:(setattr(item,'visible',True),ready.set()))
     assert ready.wait(5)
     try:
-        icon.notify('Synthetic notification icon verification. No document text.',args.app+' icon check')
+        body='Synthetic notification verification '+uuid.uuid4().hex[:8]
+        icon.notify(body,args.app+' icon check')
         shown.wait(8)
+
     finally:icon.stop()
 assert len(seen)==1
-report={'app':args.app,'explicit_app_id':'hakoshie.'+args.app,'notifications':seen,'balloon_shown_callback':shown.is_set()}
+report={'app':args.app,'explicit_app_id':args.app,'registered_display_name':display_name,'notifications':seen,'balloon_shown_callback':shown.is_set()}
 (args.repo/'NOTIFICATION-TEST-RESULTS.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
 print(json.dumps(report))
