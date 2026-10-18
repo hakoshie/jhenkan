@@ -150,11 +150,6 @@ class App:
         self.icon.run_detached()
         self.typing_buffer.start()
         self.register_hotkey()
-        self.notify(
-            "起動しました。Ctrl+Jで未確定入力、選択範囲は直接再変換できます。"
-            if has_credentials(self.settings)
-            else "常駐を開始しました。変換するにはトレイの設定からログイン・APIキー登録を行ってください。"
-        )
         while True:
             # Tcl interpreters and variables must be finalized by this thread.
             gc.collect()
