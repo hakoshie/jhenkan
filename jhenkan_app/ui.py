@@ -374,7 +374,7 @@ def compose_text(
         entry.mark_set("insert", "end-1c")
     status = ttk.Label(
         frame,
-        text="ここにローマ字・かなを入力 → Ctrl+Jで変換 / Esc・×で保持",
+        text="ここにローマ字・かなを入力 → Ctrl+Jで変換",
         style="JHenkanDark.TLabel",
     )
     status.pack(anchor="w", pady=(5, 0))
@@ -418,10 +418,7 @@ def compose_text(
         entry.configure(state="disabled")
         entry.configure(background="#111111", foreground="#bdbdbd")
         status.configure(style="JHenkanDark.TLabel")
-        summary = source.replace("\n", " ↵ ")
-        if len(summary) > 60:
-            summary = summary[:57] + "…"
-        status.configure(text=f"「{summary}」を変換中…")
+        status.configure(text="変換中…")
         results = queue.Queue()
 
         def worker() -> None:
@@ -467,9 +464,7 @@ def convert_selected(settings: Settings, captured: CapturedText, notify,
 
     point = Point()
     ctypes.windll.user32.GetCursorPos(ctypes.byref(point))
-    preview = captured.text.replace("\r", "").replace("\n", " ↵ ")
-    summary = preview if len(preview) <= 38 else preview[:35] + "…"
-    title_text = f"「{summary}」を変換中…"
+    title_text = "変換中…"
     title_font = tkfont.Font(root=root, family="Yu Gothic UI", size=9, weight="bold")
     overlay_width = max(110, min(430, title_font.measure(title_text) + 22))
     root.geometry(
@@ -484,11 +479,9 @@ def convert_selected(settings: Settings, captured: CapturedText, notify,
         anchor="w",
     )
     title.pack(fill="both", expand=True, padx=8, pady=6)
-    if len(preview) > 180:
-        preview = preview[:177] + "…"
     body = tk.Label(
         root,
-        text=preview,
+        text="",
         background="#111111",
         foreground="#bdbdbd",
         font=("Yu Gothic UI", 10),
