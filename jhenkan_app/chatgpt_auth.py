@@ -1,11 +1,13 @@
-"""Official Sign in with ChatGPT public-client flow; credentials stay in DPAPI storage."""
+"""Official Sign in with ChatGPT public-client flow; credentials stay in each OS credential store."""
 from __future__ import annotations
 
 import base64
 import ctypes
 import hashlib
 import json
-import msvcrt
+import sys
+if sys.platform == "win32":
+    import msvcrt
 import secrets
 import threading
 import time
@@ -64,6 +66,14 @@ def _storage_lock():
             if handle.tell() == 0:
                 handle.write(b"0")
                 handle.flush()
+            if sys.platform == "darwin":
+                import fcntl
+                fcntl.flock(handle, fcntl.LOCK_EX)
+                try:
+                    yield
+                finally:
+                    fcntl.flock(handle, fcntl.LOCK_UN)
+                return
             deadline = time.monotonic() + 30
             while True:
                 handle.seek(0)
@@ -82,6 +92,13 @@ def _storage_lock():
 
 
 def _load() -> dict:
+    if sys.platform == "darwin":
+        try:
+            from keyring.backends.macOS import Keyring
+            value = Keyring().get_password("JHenkan", "chatgpt-auth")
+            return json.loads(value) if value else {"host_id": "urn:uuid:" + str(uuid.uuid4()), "accounts": {}}
+        except Exception as exc:
+            raise AuthError("キーチェーンの認証情報を読み取れません。") from exc
     path = data_dir() / "chatgpt-auth.bin"
     if not path.exists():
         return {"host_id": "urn:uuid:" + str(uuid.uuid4()), "accounts": {}}
@@ -92,6 +109,13 @@ def _load() -> dict:
 
 
 def _save(data: dict) -> None:
+    if sys.platform == "darwin":
+        try:
+            from keyring.backends.macOS import Keyring
+            Keyring().set_password("JHenkan", "chatgpt-auth", json.dumps(data))
+        except Exception as exc:
+            raise AuthError("キーチェーンに認証情報を保存できません。") from exc
+        return
     directory = data_dir()
     temporary = directory / "chatgpt-auth.tmp"
     temporary.write_bytes(_protect(json.dumps(data).encode("utf-8")))

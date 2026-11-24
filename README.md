@@ -4,10 +4,14 @@ Windows上のどのアプリでも `Ctrl+J` でローマ字・かなを自然な
 
 ## GitHub Actions 版
 
-[Build desktop apps](https://github.com/hakoshie/jhenkan/actions) の実行結果の「Artifacts」から、自分のOS・CPU向けのファイルをダウンロードできます。
+[GitHub Releases](https://github.com/hakoshie/jhenkan/releases) から、自分のOS・CPU向けのZIPをダウンロードできます。正式公開前の試験ビルドは [Actions](https://github.com/hakoshie/jhenkan/actions) の「Artifacts」にあります。
 
 - **Windows (x64)**: ZIPを展開し、フォルダー内の `JHenkan.exe` を起動します。フォルダーごと保持してください。タスクトレイの `J` から設定・一時停止・終了、自動起動は設定画面で切り替えられます。
-- **macOS (Apple Silicon / Intel)**: ZIPを展開し、`JHenkan.app` を起動します。メニューバーの `J` →「API設定…」でOpenAIまたはGeminiのAPIキーを登録し、対象の文字をコピーしてから「クリップボードの文字を変換」を選び、結果を貼り付けます。自動起動したい場合は、システム設定 → 一般 → ログイン項目でアプリを追加します。Mac版はChatGPTログインとグローバルな `Ctrl+J` には未対応です。普段の入力は監視しません。CI版にはAppleの公証がありません。
+- **macOS (Apple Silicon / Intel)**: ZIPを展開し、`JHenkan.app` を起動します。「設定 → プライバシーとセキュリティ → アクセシビリティ」で JHenkan を許可してください。メニューバーの `J` →「ChatGPTにログイン…」か「設定…」で接続します。認証情報とAPIキーはこのMacのキーチェーンに保存します。
+- **Macでの変換**: `Control+J` は選択中の文字、選択がなければ行頭からカーソルまでをその場で変換します。直前の変換結果を選択して `Control+Shift+J` を押すと別候補を出します。入力欄が変わった場合は置換せず、結果を手動でコピーできます。書き込み可能なアクセシビリティAPIを提供しないアプリやパスワード欄は対象外です。Windows版のキー入力バッファとは実装が異なり、Macでは通常の入力を監視しません。
+- **Macでの自動起動**: システム設定 → 一般 → ログイン項目で、必要ならアプリを追加できます。配布ZIPはAppleの公証を受けていません。
+
+開発者向け: `vMAJOR.MINOR.PATCH` タグを push すると、全OSのテスト・起動チェックとパッケージ作成に成功した場合だけ、ZIPが1つのReleaseに添付されます。
 
 ## Windowsでソースからインストール
 

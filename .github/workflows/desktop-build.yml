@@ -2,14 +2,8 @@ name: Build desktop apps
 
 on:
   push:
-    paths:
-      - 'app.pyw'
-      - 'mac_app.py'
-      - 'jhenkan_app/**'
-      - 'assets/**'
-      - 'requirements*.txt'
-      - 'tests/**'
-      - '.github/workflows/desktop-build.yml'
+    branches: [main, desktop-builds, 'release/v*']
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
@@ -34,10 +28,11 @@ jobs:
           $process = Start-Process -FilePath .\dist\JHenkan\JHenkan.exe -ArgumentList '--smoke-test' -Wait -PassThru
           if ($process.ExitCode -ne 0) { exit $process.ExitCode }
           Copy-Item LICENSE dist/JHenkan/
+          Compress-Archive -Path dist/JHenkan -DestinationPath JHenkan-windows-x64.zip
       - uses: actions/upload-artifact@v4
         with:
           name: JHenkan-windows-x64
-          path: dist/JHenkan/
+          path: JHenkan-windows-x64.zip
           if-no-files-found: error
 
   macos:
@@ -56,8 +51,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python -m pip install -r requirements-macos.txt 'pyinstaller>=6.14,<7' pytest
-      - run: python -m pytest -q tests/test_converter.py
+      - run: python -m pip install --only-binary=cryptography -r requirements-macos.txt 'pyinstaller>=6.14,<7' pytest
+      - run: python -m pytest -q tests/test_converter.py tests/test_mac_text.py
       - name: Package and smoke test
         env:
           ARCH: ${{ matrix.arch }}
@@ -71,3 +66,40 @@ jobs:
           name: JHenkan-macos-${{ matrix.arch }}
           path: JHenkan-macos-${{ matrix.arch }}.zip
           if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release/v')
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: JHenkan-*
+          path: release-assets
+          merge-multiple: true
+      - name: Publish the verified archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BUILD_REF: ${{ github.ref_name }}
+          BUILD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          tag="${BUILD_REF#release/}"
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          cd release-assets
+          archives=(JHenkan-windows-x64.zip JHenkan-macos-arm64.zip JHenkan-macos-x86_64.zip)
+          for archive in "${archives[@]}"; do
+            test -s "$archive"
+            unzip -tq "$archive"
+          done
+          if [[ "$BUILD_REF" == release/* ]]; then
+            if gh api "repos/$GH_REPO/git/ref/tags/$tag" --silent 2>/dev/null; then
+              echo "Refusing to use an existing tag from a bootstrap branch." >&2
+              exit 1
+            fi
+            gh api --method POST "repos/$GH_REPO/git/refs" -f "ref=refs/tags/$tag" -f "sha=$BUILD_SHA" --silent
+          fi
+          gh release create "$tag" "${archives[@]}" --verify-tag --title "JHenkan $tag" --notes "Windows x64 and macOS Apple Silicon/Intel. macOS requires Accessibility permission and is not notarized."

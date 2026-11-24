@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 import os
 import sys
-import winreg
+if sys.platform == "win32":
+    import winreg
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -26,6 +27,8 @@ KEY_ENVIRONMENTS = {
 
 
 def data_dir() -> Path:
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / APP_NAME
     base = Path(os.getenv("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
     return base / APP_NAME
 
@@ -85,20 +88,27 @@ def has_credentials(settings: Settings) -> bool:
     return bool(get_api_key(settings.provider))
 
 
+def _credential_store():
+    if sys.platform == "darwin":
+        from keyring.backends.macOS import Keyring
+        return Keyring()
+    return keyring
+
+
 def get_api_key(provider: str, chatgpt_account: str = "") -> str:
     if provider == "chatgpt":
         from .chatgpt_auth import access_token
         return access_token(chatgpt_account)
     if provider not in KEYRING_SERVICES:
         return ""
-    return keyring.get_password(KEYRING_SERVICES[provider], KEYRING_USER) or os.getenv(
+    return _credential_store().get_password(KEYRING_SERVICES[provider], KEYRING_USER) or os.getenv(
         KEY_ENVIRONMENTS[provider], ""
     )
 
 
 def set_api_key(provider: str, value: str) -> None:
     if value and provider in KEYRING_SERVICES:
-        keyring.set_password(KEYRING_SERVICES[provider], KEYRING_USER, value)
+        _credential_store().set_password(KEYRING_SERVICES[provider], KEYRING_USER, value)
 
 
 def startup_command() -> str:
