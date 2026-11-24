@@ -2,7 +2,14 @@
 
 Windows上のどのアプリでも `Ctrl+J` でローマ字・かなを自然な漢字かな交じり文へ変換する、軽量な常駐ツールです。ChatGPTログイン、Google Gemini、OpenAI APIを切り替えられます。
 
-## インストール
+## GitHub Actions 版
+
+[Build desktop apps](https://github.com/hakoshie/jhenkan/actions) の実行結果の「Artifacts」から、自分のOS・CPU向けのファイルをダウンロードできます。
+
+- **Windows (x64)**: ZIPを展開し、フォルダー内の `JHenkan.exe` を起動します。フォルダーごと保持してください。タスクトレイの `J` から設定・一時停止・終了、自動起動は設定画面で切り替えられます。
+- **macOS (Apple Silicon / Intel)**: ZIPを展開し、`JHenkan.app` を起動します。メニューバーの `J` →「API設定…」でOpenAIまたはGeminiのAPIキーを登録し、対象の文字をコピーしてから「クリップボードの文字を変換」を選び、結果を貼り付けます。自動起動したい場合は、システム設定 → 一般 → ログイン項目でアプリを追加します。Mac版はChatGPTログインとグローバルな `Ctrl+J` には未対応です。普段の入力は監視しません。CI版にはAppleの公証がありません。
+
+## Windowsでソースからインストール
 
 `install.cmd` をダブルクリックしてください。初回だけ必要な部品をインストールし、そのまま常駐アプリを起動します。PowerShellやGit Bashを普段開く必要はありません。
 

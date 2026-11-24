@@ -1,0 +1,5 @@
+openai>=2.0,<3
+keyring>=25,<27
+Pillow>=10,<13
+pyobjc-framework-Cocoa>=10,<14
+pyobjc-framework-Security>=10,<14

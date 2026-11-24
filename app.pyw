@@ -12,7 +12,7 @@ import pystray
 from PIL import Image, ImageDraw
 from pystray import MenuItem as Item
 
-from jhenkan_app.config import Settings, has_credentials, config_path
+from jhenkan_app.config import Settings, has_credentials, config_path, data_dir
 from jhenkan_app.hotkey import GlobalHotkey
 from jhenkan_app.selection import (
     capture_buffered_text,
@@ -26,7 +26,8 @@ from jhenkan_app.ui import convert_selected, edit_settings, gui_thread_lifetime
 
 ICON_PATH = Path(__file__).with_name('assets') / 'jhenkan-d-kan.ico'
 MUTEX_NAME = "Local\\JHenkan-7f44f5c6"
-LOG_PATH = Path(__file__).with_name("jhenkan.log")
+LOG_PATH = (data_dir() if getattr(sys, "frozen", False) else Path(__file__).parent) / "jhenkan.log"
+LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(
     filename=LOG_PATH,
     level=logging.INFO,
@@ -212,6 +213,9 @@ class App:
 
 
 if __name__ == "__main__":
+    if "--smoke-test" in sys.argv:
+        assert tray_image().size[0] > 0
+        raise SystemExit(0)
     mutex = single_instance()
     if mutex is not None:
         set_app_identity("JHenkan", "JHenkan", ICON_PATH.with_suffix(".png"))

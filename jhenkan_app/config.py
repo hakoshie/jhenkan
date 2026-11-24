@@ -103,6 +103,8 @@ def set_api_key(provider: str, value: str) -> None:
 
 def startup_command() -> str:
     executable = Path(sys.executable)
+    if getattr(sys, "frozen", False):
+        return f'"{executable}"'
     if executable.name.lower() == "python.exe":
         pythonw = executable.with_name("pythonw.exe")
         if pythonw.exists():
